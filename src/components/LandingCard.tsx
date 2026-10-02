@@ -14,6 +14,7 @@ interface LandingCardProps {
   isLoadingSong: boolean;
   difficulty: Difficulty;
   onSelectDifficulty: (diff: Difficulty) => void;
+  onOpenMultiplayer?: () => void;
 }
 
 const SAMPLES = [
@@ -57,6 +58,7 @@ export const LandingCard: React.FC<LandingCardProps> = ({
   isLoadingSong,
   difficulty,
   onSelectDifficulty,
+  onOpenMultiplayer,
 }) => {
   const [urlInput, setUrlInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -151,6 +153,17 @@ export const LandingCard: React.FC<LandingCardProps> = ({
             })}
           </div>
         </div>
+
+        {/* Multiplayer entry */}
+        {onOpenMultiplayer && (
+          <button
+            onClick={onOpenMultiplayer}
+            className="w-full mt-3 flex items-center justify-center gap-2 h-11 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white font-medium text-sm transition-all active:scale-[0.99]"
+          >
+            <span>Play with Friends</span>
+            <ArrowRightIcon size={15} />
+          </button>
+        )}
 
         {/* Divider */}
         <div className="relative my-6 flex items-center justify-center">

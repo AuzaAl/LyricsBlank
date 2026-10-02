@@ -12,13 +12,18 @@ import type { Difficulty } from '@/types/lyrics';
 interface SoloShellProps {
   mode?: GameMode;
   onExitToLanding?: () => void;
+  onOpenMultiplayer?: () => void;
 }
 
 /**
  * Solo practice experience. Behaviour is identical to the pre-refactor page.tsx;
  * the only change is that game state now lives in usePracticeEngine.
  */
-export const SoloShell: React.FC<SoloShellProps> = ({ mode = 'classic', onExitToLanding }) => {
+export const SoloShell: React.FC<SoloShellProps> = ({
+  mode = 'classic',
+  onExitToLanding,
+  onOpenMultiplayer,
+}) => {
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const engine = usePracticeEngine({ mode });
 
@@ -62,6 +67,7 @@ export const SoloShell: React.FC<SoloShellProps> = ({ mode = 'classic', onExitTo
           isLoadingSong={isLoadingSong}
           difficulty={difficulty}
           onSelectDifficulty={engine.selectDifficulty}
+          onOpenMultiplayer={onOpenMultiplayer}
         />
       ) : (
         <PracticeView engine={engine} />
