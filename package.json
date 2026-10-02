@@ -9,6 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:scoring": "tsc -p scripts/tsconfig.scoring.json && node scripts/test-scoring.mjs",
+    "test:instrumental": "tsc -p scripts/tsconfig.instrumental.json && node scripts/test-instrumental.mjs",
+    "test:instrumental:e2e": "tsc -p scripts/tsconfig.verify.json && node scripts/verify-instrumental-33x.mjs",
     "smoke:room": "node scripts/smoke-room.mjs"
   },
   "dependencies": {

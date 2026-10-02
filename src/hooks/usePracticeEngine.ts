@@ -12,6 +12,7 @@ import {
   VideoColorPalette,
 } from '@/lib/color-extractor';
 import { sfx } from '@/lib/audio-sfx';
+import { findActiveLineIndex, INSTRUMENTAL_THRESHOLD_MS } from '@/lib/instrumental';
 import { computeScore, makeScoreConfig, ScoreResult, GameMode } from '@/lib/scoring';
 import {
   Difficulty,
@@ -59,6 +60,11 @@ export interface PracticeEngineOptions {
   lockedDifficulty?: Difficulty;
   /** Classic: force auto-pause ON; real-time: force OFF. */
   forcedAutoPause?: boolean;
+  /**
+   * Classic gate: block playback/seek from passing a line that still has an
+   * unanswered blank. Defaults to `mode === 'classic'`.
+   */
+  enforceLineCompletion?: boolean;
 }
 
 export interface PracticeEngine {
@@ -100,6 +106,8 @@ export interface PracticeEngine {
   toggleSound: () => void;
   toggleAutoPause: () => void;
   seekToLine: (ms: number) => void;
+  /** Gated raw seek (bottom-bar scrubber). Honors the Classic completion gate. */
+  seekToMs: (ms: number) => void;
   togglePlay: () => void;
   closeCompleteModal: () => void;
   resetSession: () => void;
@@ -124,6 +132,7 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
     lockedTimingOffsetMs,
     lockedDifficulty,
     forcedAutoPause,
+    enforceLineCompletion,
   } = options;
 
   const [currentSong, setCurrentSong] = useState<SongMetadata | null>(null);
@@ -221,7 +230,12 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
       accuracy: 100,
     }));
     if (adjustedLines.length > 0 && playerRef.current) {
-      playerRef.current.seekTo(Math.max(0, adjustedLines[0].startTimeMs / 1000 - 1));
+      // Start at 0 when the song opens with a long instrumental intro so the
+      // note row is visible; otherwise cue just before the first line.
+      const firstStart = adjustedLines[0].startTimeMs;
+      const startMs =
+        firstStart >= INSTRUMENTAL_THRESHOLD_MS ? 0 : Math.max(0, firstStart - 1000);
+      playerRef.current.seekTo(startMs / 1000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseLines, difficulty, timingOffsetMs]);
@@ -283,20 +297,45 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
     [lockedDifficulty]
   );
 
-  // Find active line
-  const activeLineIndex = React.useMemo(() => {
-    if (!lesson || lesson.lines.length === 0) return -1;
-    const idx = lesson.lines.findIndex(
-      (l) => currentTimeMs >= l.startTimeMs && currentTimeMs <= l.endTimeMs
-    );
-    if (idx !== -1) return idx;
-    for (let i = 0; i < lesson.lines.length; i++) {
-      if (currentTimeMs < lesson.lines[i].startTimeMs) return Math.max(0, i - 1);
-    }
-    return lesson.lines.length - 1;
-  }, [lesson, currentTimeMs]);
+  // Find active line (gap-aware: during a long instrumental break → -1)
+  const activeLineIndex = React.useMemo(
+    () => findActiveLineIndex(lesson?.lines ?? [], currentTimeMs),
+    [lesson, currentTimeMs]
+  );
 
   const activeLine = activeLineIndex >= 0 ? lesson?.lines[activeLineIndex] : undefined;
+
+  // ---- Classic gate: playback may never pass an incomplete line ----------
+  const enforceCompletion = enforceLineCompletion ?? mode === 'classic';
+
+  /**
+   * Index of the first line that still has an unanswered blank (skips count as
+   * answered), or -1 when nothing blocks. Pure helper so it can run against a
+   * synchronously-updated lesson ref (state updates are async).
+   */
+  const firstIncompleteLineIndex = useCallback(
+    (ls: LyricLine[] | null): number => {
+      if (!enforceCompletion || !ls) return -1;
+      return ls.findIndex((l) =>
+        l.words.some((w) => w.isBlank && w.isCorrect === undefined && !w.skipped)
+      );
+    },
+    [enforceCompletion]
+  );
+
+  // Always-fresh lesson (updated synchronously by answer handlers below) so the
+  // gate sees the answer that was just submitted, not the previous render.
+  const lessonRef = useRef<LyricLine[] | null>(lesson?.lines ?? null);
+  lessonRef.current = lesson ? lesson.lines : null;
+
+  /** Line index at a given time (gaps resolve to the preceding line). */
+  const lineIndexAt = useCallback((ms: number, ls: LyricLine[]): number => {
+    for (let i = 0; i < ls.length; i++) {
+      if (ms < ls[i].startTimeMs) return Math.max(0, i - 1);
+    }
+    return ls.length - 1;
+  }, []);
+
 
   // Notify line changes
   const prevLineIndexRef = useRef(-1);
@@ -318,6 +357,23 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
     }
     return null;
   }, [autoPause, activeLine]);
+
+  /**
+   * Classic completion watchdog. Independent of the auto-pause toggle: if
+   * playback ever reaches the end of the first incomplete line, we hard-pause
+   * so the player can never drift into the next line with blanks left over.
+   */
+  useEffect(() => {
+    if (!isPlaying) return;
+    const ls = lessonRef.current;
+    const gate = firstIncompleteLineIndex(ls);
+    if (gate < 0 || !ls) return;
+    const gateLine = ls[gate];
+    const lineEnd = Math.max(gateLine.startTimeMs + 500, gateLine.endTimeMs - 200);
+    if (currentTimeMs >= lineEnd) {
+      playerRef.current?.pause();
+    }
+  }, [isPlaying, currentTimeMs, firstIncompleteLineIndex]);
 
   // Emit a final score result when all blanks are answered
   const maybeFinish = useCallback(
@@ -358,6 +414,7 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
       }));
 
       const newLesson = { ...lesson, lines: newLines };
+      lessonRef.current = newLines;
       setLesson(newLesson);
 
       const totalAttempts = updatedCorrectCount + stats.incorrectCount;
@@ -435,6 +492,7 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
       }));
 
       const newLesson = { ...lesson, lines: newLines };
+      lessonRef.current = newLines;
       setLesson(newLesson);
 
       const updatedAnsweredCount = stats.answeredCount + 1;
@@ -489,8 +547,18 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
   }, []);
 
   const resumePlay = useCallback(() => {
+    // Classic gate: never resume past a line that still has an unanswered blank.
+    const ls = lessonRef.current;
+    const gate = firstIncompleteLineIndex(ls);
+    if (gate >= 0 && ls) {
+      const gateLine = ls[gate];
+      const lineEnd = Math.max(gateLine.startTimeMs + 500, gateLine.endTimeMs - 200);
+      if (currentTimeMs >= lineEnd) {
+        playerRef.current?.seekTo(Math.max(0, gateLine.startTimeMs / 1000 - 0.2));
+      }
+    }
     playerRef.current?.play();
-  }, []);
+  }, [firstIncompleteLineIndex, currentTimeMs]);
 
   const cyclePlaybackRate = useCallback(() => {
     if (lockPlaybackRate) return; // real-time modes lock to 1.0x
@@ -516,13 +584,60 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
     setAutoPauseState((prev) => !prev);
   }, [forcedAutoPause]);
 
-  const seekToLine = useCallback((ms: number) => {
-    playerRef.current?.seekTo(Math.max(0, ms / 1000 - 0.2));
-  }, []);
+  const seekToLine = useCallback(
+    (ms: number) => {
+      // Classic gate: never jump to (or past) a line beyond the first
+      // incomplete one — the player must fill the current line first.
+      const ls = lessonRef.current;
+      const gate = firstIncompleteLineIndex(ls);
+      if (gate >= 0 && ls) {
+        const target = lineIndexAt(ms, ls);
+        if (target > gate) {
+          const gateLine = ls[gate];
+          playerRef.current?.seekTo(Math.max(0, gateLine.startTimeMs / 1000 - 0.2));
+          return;
+        }
+      }
+      playerRef.current?.seekTo(Math.max(0, ms / 1000 - 0.2));
+    },
+    [firstIncompleteLineIndex, lineIndexAt]
+  );
+
+  const seekToMs = useCallback(
+    (ms: number) => {
+      const ls = lessonRef.current;
+      const gate = firstIncompleteLineIndex(ls);
+      if (gate >= 0 && ls) {
+        const target = lineIndexAt(ms, ls);
+        if (target > gate) {
+          const gateLine = ls[gate];
+          playerRef.current?.seekTo(Math.max(0, gateLine.startTimeMs / 1000 - 0.2));
+          return;
+        }
+      }
+      playerRef.current?.seekTo(Math.max(0, ms / 1000));
+    },
+    [firstIncompleteLineIndex, lineIndexAt]
+  );
 
   const togglePlay = useCallback(() => {
+    // Classic gate: if paused at/after an incomplete line, snap back to it
+    // instead of letting playback run into the next line.
+    if (!isPlaying) {
+      const ls = lessonRef.current;
+      const gate = firstIncompleteLineIndex(ls);
+      if (gate >= 0 && ls) {
+        const gateLine = ls[gate];
+        const lineEnd = Math.max(gateLine.startTimeMs + 500, gateLine.endTimeMs - 200);
+        if (currentTimeMs >= lineEnd) {
+          playerRef.current?.seekTo(Math.max(0, gateLine.startTimeMs / 1000 - 0.2));
+          playerRef.current?.play();
+          return;
+        }
+      }
+    }
     playerRef.current?.togglePlay();
-  }, []);
+  }, [isPlaying, firstIncompleteLineIndex, currentTimeMs]);
 
   const closeCompleteModal = useCallback(() => setIsCompleteModalOpen(false), []);
 
@@ -567,6 +682,7 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
     toggleSound,
     toggleAutoPause,
     seekToLine,
+    seekToMs,
     togglePlay,
     closeCompleteModal,
     resetSession,

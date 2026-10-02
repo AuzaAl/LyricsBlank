@@ -119,6 +119,41 @@ body {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Instrumental-break music notes (YT Music style)
+ * Three notes gently bob out of phase to signal a musical break. Applied only
+ * to the active gap row; callers pass a per-note animation-delay inline.
+ * ------------------------------------------------------------------------- */
+.instrumental-note {
+  display: inline-block;
+  animation: instrumentalBob 1.4s ease-in-out infinite;
+  transform-origin: center bottom;
+  will-change: transform, opacity;
+}
+
+@keyframes instrumentalBob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.55;
+  }
+  35% {
+    transform: translateY(-6px) scale(1.12);
+    opacity: 1;
+  }
+  60% {
+    transform: translateY(-2px) scale(1.04);
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .instrumental-note {
+    animation: none;
+    opacity: 0.9;
+  }
+}
 .ambient-stage__vignette {
   position: absolute;
   inset: 0;

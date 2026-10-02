@@ -4,15 +4,22 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { LyricLine, LyricWord } from '@/types/lyrics';
 import { sfx } from '@/lib/audio-sfx';
 import {
+  findInstrumentalGaps,
+  InstrumentalGap,
+} from '@/lib/instrumental';
+import {
   CircleCheckIcon,
   SparklesIcon,
   ChevronRightIcon,
   RotateCcwIcon,
+  MusicNoteIcon,
 } from '@/components/icons';
 
 interface MonkeyLyricsCanvasProps {
   lines: LyricLine[];
   currentTimeMs: number;
+  /** Song duration — enables the outro instrumental row. */
+  durationMs?: number;
   onCorrectAnswer: (wordId: string, answer: string) => void;
   onIncorrectAnswer: (wordId: string, answer: string) => void;
   onReplayLine: () => void;
@@ -26,6 +33,7 @@ interface MonkeyLyricsCanvasProps {
 export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
   lines,
   currentTimeMs,
+  durationMs,
   onCorrectAnswer,
   onIncorrectAnswer,
   onReplayLine,
@@ -38,24 +46,48 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
 
-  // Find currently active line based on currentTimeMs
-  const activeLineIndex = useMemo(() => {
-    if (!lines || lines.length === 0) return 0;
-    const index = lines.findIndex(
-      (l) => currentTimeMs >= l.startTimeMs && currentTimeMs <= l.endTimeMs
+  // Instrumental breaks (intro / interlude / outro) — rendered as note rows.
+  const gaps = useMemo(
+    () => findInstrumentalGaps(lines, durationMs),
+    [lines, durationMs]
+  );
+
+  // Unified render order: lyric lines + instrumental note rows, sorted by time.
+  type RenderRow =
+    | { key: string; startTimeMs: number; kind: 'line'; lineIndex: number }
+    | { key: string; startTimeMs: number; kind: 'gap'; gap: InstrumentalGap };
+
+  const rows = useMemo<RenderRow[]>(() => {
+    const out: RenderRow[] = lines.map((l, i) => ({
+      key: `line-${i}`,
+      startTimeMs: l.startTimeMs,
+      kind: 'line' as const,
+      lineIndex: i,
+    }));
+    gaps.forEach((g) =>
+      out.push({ key: g.id, startTimeMs: g.startTimeMs, kind: 'gap' as const, gap: g })
     );
-    if (index !== -1) return index;
+    return out.sort((a, b) => a.startTimeMs - b.startTimeMs);
+  }, [lines, gaps]);
 
-    // In-between lines
-    for (let i = 0; i < lines.length; i++) {
-      if (currentTimeMs < lines[i].startTimeMs) {
-        return Math.max(0, i - 1);
-      }
+  // The active row is the last row that has already started. During a long
+  // silence this is the note row, which is why no lyric line is highlighted.
+  const activeRowIndex = useMemo(() => {
+    if (rows.length === 0) return -1;
+    let idx = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].startTimeMs <= currentTimeMs) idx = i;
+      else break;
     }
-    return lines.length - 1;
-  }, [lines, currentTimeMs]);
+    return idx;
+  }, [rows, currentTimeMs]);
 
-  const activeLine = lines[activeLineIndex];
+  const activeRow = activeRowIndex >= 0 ? rows[activeRowIndex] : undefined;
+
+  // -1 while an instrumental note row is active → no lyric line highlighted.
+  const activeLineIndex = activeRow?.kind === 'line' ? activeRow.lineIndex : -1;
+
+  const activeLine = activeLineIndex >= 0 ? lines[activeLineIndex] : undefined;
 
   // Find active blank word to type
   const activeBlankWord = useMemo(() => {
@@ -66,7 +98,7 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
     if (pendingInActiveLine) return pendingInActiveLine;
 
     // Search upcoming lines
-    for (let i = activeLineIndex; i < lines.length; i++) {
+    for (let i = Math.max(0, activeLineIndex); i < lines.length; i++) {
       const pending = lines[i].words.find((w) => w.isBlank && w.isCorrect === undefined);
       if (pending) return pending;
     }
@@ -83,16 +115,19 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
     }
   }, [activeBlankWord]);
 
-  // Center active line smoothly with am-lyrics style transition
+  // Center the active row (lyric line OR instrumental note) with am-lyrics style transition
   useEffect(() => {
-    const activeEl = document.getElementById(`lyric-line-${activeLineIndex}`);
+    if (activeRowIndex < 0) return;
+    const row = rows[activeRowIndex];
+    if (!row) return;
+    const activeEl = document.getElementById(`lyric-row-${row.key}`);
     if (activeEl && containerRef.current) {
       activeEl.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
       });
     }
-  }, [activeLineIndex]);
+  }, [activeRowIndex, rows]);
 
   // Handle typing input
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -308,18 +343,47 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
         ref={containerRef}
         className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-12 py-[26vh] scrollbar-none text-left"
       >
-        {lines.map((line, idx) => {
-          const isActive = idx === activeLineIndex;
-          const distance = Math.abs(idx - activeLineIndex);
-
-          // Depth cascade (design.md §5): blur+opacity per distance,
-          // font weight 600 everywhere, active line pure white scale(1)
+        {rows.map((row, idx) => {
+          const isActive = idx === activeRowIndex;
+          const distance = Math.abs(idx - activeRowIndex);
           const depth = Math.min(distance, 4);
 
+          // ---- Instrumental note row (intro / interlude / outro) ----
+          if (row.kind === 'gap') {
+            const isGapActive = isActive;
+            return (
+              <div
+                id={`lyric-row-${row.key}`}
+                key={row.key}
+                data-depth={depth}
+                className={`lyric-line flex items-center gap-2.5 select-none text-2xl sm:text-3xl ${
+                  isGapActive ? 'lg:text-[44px] sm:text-4xl animate-line-enter' : 'lg:text-[34px]'
+                }`}
+                title="Instrumental break"
+                aria-label="Instrumental break"
+              >
+                {[0, 1, 2].map((n) => (
+                  <MusicNoteIcon
+                    key={n}
+                    size={isGapActive ? 30 : 24}
+                    className={
+                      isGapActive
+                        ? 'instrumental-note text-white'
+                        : 'text-white/50'
+                    }
+                    style={{ animationDelay: `${n * 0.22}s` }}
+                  />
+                ))}
+              </div>
+            );
+          }
+
+          // ---- Regular lyric line ----
+          const line = lines[row.lineIndex];
           return (
             <div
-              id={`lyric-line-${idx}`}
-              key={line.id}
+              id={`lyric-row-${row.key}`}
+              key={row.key}
               data-depth={depth}
               onClick={() => onSeekLine?.(line.startTimeMs)}
               className={`lyric-line flex flex-wrap items-baseline cursor-pointer select-none text-2xl sm:text-3xl ${

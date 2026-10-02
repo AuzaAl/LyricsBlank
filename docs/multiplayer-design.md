@@ -387,3 +387,48 @@ Solo calls `usePracticeEngine({})` (identical behaviour). MP adds callbacks + lo
 ### Deferred (post-v1)
 Reactions/emoji · spectator (WebRTC) · song voting · reconnect UI · async ghost ·
 server-authoritative anti-cheat · leaderboard
+
+## 14. Solo polish: instrumental notes + Classic gate
+
+Two behaviour additions layered on the shared engine/renderer.
+
+### 14.1 Instrumental-break music notes
+- `src/lib/instrumental.ts` is the single source of truth:
+  - `INSTRUMENTAL_THRESHOLD_MS = 7000` (matches BiniLyrics' own `am-lyrics`
+    renderer and Better Lyrics / YT Music).
+  - `findInstrumentalGaps(lines, durationMs?)` returns every silence ≥ threshold
+    as `{ id, startTimeMs, endTimeMs, durationMs, afterLineIndex }` — covering
+    **intro**, **inter-line (interlude)** and **outro** (outro only when the
+    duration is known).
+  - `findActiveLineIndex(lines, t)` is the gap-aware highlight used by both the
+    renderer and the engine: inside a long silence → `-1` (no line highlighted,
+    the note row becomes active); inside a short silence → previous line stays
+    (no flicker); before a long intro → `-1`.
+- `MonkeyLyricsCanvas` merges lyric lines and gap rows into one time-sorted
+  `rows[]`, highlights the last row that has started, and renders three
+  `MusicNoteIcon`s (`.instrumental-note`, staggered `animation-delay`) for gaps.
+- The engine seeks to `0` (not `firstLine − 1s`) when the song opens with a long
+  intro, so the note row is actually visible.
+- Animation lives in `globals.css` (`.instrumental-note` / `@keyframes
+  instrumentalBob`) and is disabled under `prefers-reduced-motion`.
+- Verified against real data (`33x` — Perunggu): intro `0→20087ms` plus five
+  interludes; see `scripts/verify-instrumental-33x.mjs`.
+
+### 14.2 Classic-mode line-completion gate
+- Engine option `enforceLineCompletion` (default `mode === 'classic'`).
+- `firstIncompleteLineIndex(lines)` = first line with an unanswered, non-skipped
+  blank. Playback can never advance past it:
+  - `resumePlay()` / `togglePlay()` snap back to the gate line if the clock has
+    reached its end; `seekToLine()` / `seekToMs()` (scrubber) clamp any jump
+    beyond it.
+  - A watchdog effect hard-pauses when the clock reaches the gate line's end,
+    independent of the auto-pause toggle.
+- Skipping a blank (`Esc`) marks it answered, so it no longer blocks advancing —
+  the player can always move on, but only once the line is *resolved*.
+- Gate reads from a synchronously-updated `lessonRef`, so answering the last
+  blank of a line lets playback continue immediately (no stale-closure seek-back).
+
+### Verification
+- `npm run test:instrumental` — pure gap/highlight unit tests.
+- `npm run test:instrumental:e2e` — real TTML through the local API (needs dev).
+- `npx tsc --noEmit` + `npm run build` clean.

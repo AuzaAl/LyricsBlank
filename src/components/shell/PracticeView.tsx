@@ -77,6 +77,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({ engine, topSlot, ove
             <MonkeyLyricsCanvas
               lines={lesson.lines}
               currentTimeMs={currentTimeMs}
+              durationMs={durationMs}
               onCorrectAnswer={engine.correctAnswer}
               onIncorrectAnswer={engine.incorrectAnswer}
               onReplayLine={engine.replayLine}
@@ -97,7 +98,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({ engine, topSlot, ove
         onReplayLine={engine.replayLine}
         currentTimeMs={currentTimeMs}
         durationMs={durationMs}
-        onSeek={(seconds) => playerRef.current?.seekTo(seconds)}
+        onSeek={(seconds) => engine.seekToMs(seconds * 1000)}
         playbackRate={playbackRate}
         onCyclePlaybackRate={engine.cyclePlaybackRate}
         stats={stats}

@@ -15,6 +15,7 @@ export * from './x';
 export * from './disc-3';
 export * from './flame';
 export * from './audio-lines';
+export * from './music-note';
 export * from './keyboard';
 export * from './party-popper';
 export * from './chevron-right';
