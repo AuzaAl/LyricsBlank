@@ -11,6 +11,7 @@
     "test:scoring": "tsc -p scripts/tsconfig.scoring.json && node scripts/test-scoring.mjs",
     "test:instrumental": "tsc -p scripts/tsconfig.instrumental.json && node scripts/test-instrumental.mjs",
     "test:instrumental:e2e": "tsc -p scripts/tsconfig.verify.json && node scripts/verify-instrumental-33x.mjs",
+    "test:text": "tsc -p scripts/tsconfig.text.json && node scripts/test-text.mjs",
     "smoke:room": "node scripts/smoke-room.mjs"
   },
   "dependencies": {

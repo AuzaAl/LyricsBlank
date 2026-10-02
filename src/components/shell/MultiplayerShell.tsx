@@ -198,6 +198,13 @@ export const MultiplayerShell: React.FC<MultiplayerShellProps> = ({ initialRoomC
     onExit();
   }, [leave, onExit]);
 
+  // Leaving mid-race (from the top bar) drops the room AND resets local progress.
+  const handleExitSession = useCallback(() => {
+    leave();
+    engine.resetSession();
+    onExit();
+  }, [leave, engine, onExit]);
+
   const handleRematch = useCallback(() => {
     rematch();
     engine.reload();
@@ -264,6 +271,8 @@ export const MultiplayerShell: React.FC<MultiplayerShellProps> = ({ initialRoomC
         ) : (
           <PracticeView
             engine={engine}
+            onExit={handleExitSession}
+            exitLabel="Leave Race"
             topSlot={
               phase === 'racing' ? (
                 <RaceScoreboard

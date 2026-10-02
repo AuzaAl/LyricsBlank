@@ -7,6 +7,7 @@ import {
   ArrowRightIcon,
   RefreshCwIcon,
   ZapIcon,
+  XIcon,
 } from '@/components/icons';
 
 interface MonkeyTopBarProps {
@@ -18,6 +19,9 @@ interface MonkeyTopBarProps {
   onAdjustOffset: (deltaMs: number) => void;
   onResetOffset: () => void;
   xpEarned: number;
+  /** Leave the current practice session (solo → landing, multiplayer → room). */
+  onExit?: () => void;
+  exitLabel?: string;
 }
 
 /**
@@ -34,6 +38,8 @@ export const MonkeyTopBar: React.FC<MonkeyTopBarProps> = ({
   onAdjustOffset,
   onResetOffset,
   xpEarned,
+  onExit,
+  exitLabel = 'Exit',
 }) => {
   const [searchInput, setSearchInput] = useState('');
 
@@ -134,6 +140,19 @@ export const MonkeyTopBar: React.FC<MonkeyTopBarProps> = ({
           <ZapIcon size={14} className="text-white/70" />
           <span className="tabular-nums text-white/90">+{xpEarned} XP</span>
         </div>
+
+        {/* Forced session exit — always visible so the player can bail out.
+            Leaving (or switching song) resets the current run's progress. */}
+        {onExit && (
+          <button
+            onClick={onExit}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.05] hover:bg-white/[0.14] border border-white/10 text-xs font-medium text-white/80 hover:text-white active:scale-[0.96] transition-all"
+            title="Leave this session (progress resets)"
+          >
+            <XIcon size={13} />
+            <span>{exitLabel}</span>
+          </button>
+        )}
       </div>
     </header>
   );

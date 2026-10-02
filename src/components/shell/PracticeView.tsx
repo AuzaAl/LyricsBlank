@@ -13,13 +13,22 @@ interface PracticeViewProps {
   topSlot?: React.ReactNode;
   /** Optional element rendered as an overlay (e.g. countdown). */
   overlay?: React.ReactNode;
+  /** Leave the current session (progress resets). */
+  onExit?: () => void;
+  exitLabel?: string;
 }
 
 /**
  * The core practice UI (top bar + video/lyrics split + player bar).
  * Shared verbatim by solo and multiplayer; multiplayer only injects slots.
  */
-export const PracticeView: React.FC<PracticeViewProps> = ({ engine, topSlot, overlay }) => {
+export const PracticeView: React.FC<PracticeViewProps> = ({
+  engine,
+  topSlot,
+  overlay,
+  onExit,
+  exitLabel,
+}) => {
   const {
     currentSong,
     difficulty,
@@ -33,7 +42,6 @@ export const PracticeView: React.FC<PracticeViewProps> = ({ engine, topSlot, ove
     isPlaying,
     currentTimeMs,
     durationMs,
-    activeLine,
     autoPauseLineEndMs,
     playerRef,
   } = engine;
@@ -51,6 +59,8 @@ export const PracticeView: React.FC<PracticeViewProps> = ({ engine, topSlot, ove
         onAdjustOffset={engine.adjustOffset}
         onResetOffset={engine.resetOffset}
         xpEarned={stats.xpEarned}
+        onExit={onExit}
+        exitLabel={exitLabel}
       />
 
       {topSlot}
@@ -65,7 +75,6 @@ export const PracticeView: React.FC<PracticeViewProps> = ({ engine, topSlot, ove
             onDurationChange={engine.setDurationMs}
             onIsPlayingChange={engine.setPlaying}
             autoPauseLineEndMs={autoPauseLineEndMs}
-            currentLineStartMs={activeLine?.startTimeMs}
             ambientColor={palette.primary}
             songTitle={currentSong.title}
             artist={currentSong.artist}

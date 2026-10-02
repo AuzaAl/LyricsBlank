@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { LyricLine, LyricWord } from '@/types/lyrics';
 import { sfx } from '@/lib/audio-sfx';
+import { normalizeAnswer, maskWord, maskRemainder, letterCount, hintPrefix } from '@/lib/text';
 import {
   findInstrumentalGaps,
   InstrumentalGap,
@@ -137,8 +138,8 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
     setTypedInput(val);
     sfx.playKeyClick();
 
-    const normalizedTarget = activeBlankWord.cleanText;
-    const normalizedInput = val.toLowerCase().replace(/[^a-z0-9']/g, '').trim();
+    const normalizedTarget = normalizeAnswer(activeBlankWord.cleanText);
+    const normalizedInput = normalizeAnswer(val);
 
     if (normalizedInput === normalizedTarget) {
       sfx.playCorrect();
@@ -170,8 +171,8 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
     if (e.key === 'Enter') {
       e.preventDefault();
       if (!activeBlankWord) return;
-      const normalizedTarget = activeBlankWord.cleanText;
-      const normalizedInput = typedInput.toLowerCase().replace(/[^a-z0-9']/g, '').trim();
+      const normalizedTarget = normalizeAnswer(activeBlankWord.cleanText);
+      const normalizedInput = normalizeAnswer(typedInput);
 
       if (normalizedInput === normalizedTarget) {
         sfx.playCorrect();
@@ -208,9 +209,9 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
     if (activeBlankWord) {
       onUseHint(activeBlankWord.id);
       const target = activeBlankWord.cleanText;
-      const currentLen = typedInput.length;
-      if (currentLen < target.length) {
-        setTypedInput(target.slice(0, currentLen + 1));
+      const next = hintPrefix(target, letterCount(typedInput));
+      if (letterCount(next) > letterCount(typedInput)) {
+        setTypedInput(next);
         sfx.playKeyClick();
       }
     }
@@ -298,23 +299,23 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
           </span>
           {/* Subtle blinking cursor */}
           <span className="inline-block w-[2px] h-[1em] bg-white animate-pulse ml-0.5 align-middle" />
-          {/* Subtle placeholder dashes for remaining length */}
-          {typedInput.length < w.cleanText.length && (
+          {/* Placeholder for remaining letters — apostrophes stay visible */}
+          {maskRemainder(w.cleanText, letterCount(typedInput)) && (
             <span className="text-white/20 font-normal tracking-widest ml-1 select-none">
-              {'_'.repeat(w.cleanText.length - typedInput.length)}
+              {maskRemainder(w.cleanText, letterCount(typedInput))}
             </span>
           )}
         </span>
       );
     }
 
-    // Case D: Pending blank in another line
+    // Case D: Pending blank in another line — apostrophes stay visible
     return (
       <span
         key={w.id}
         className="inline-block mr-2.5 sm:mr-3 px-1 border-b border-white/20 text-white/30 font-normal tracking-wider"
       >
-        {'_'.repeat(Math.max(3, w.cleanText.length))}
+        {maskWord(w.cleanText)}
       </span>
     );
   };

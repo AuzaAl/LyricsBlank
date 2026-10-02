@@ -221,14 +221,14 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
     const adjustedLines = applyTimingOffset(baseLines, timingOffsetMs);
     const newLesson = generateExercise(currentSong, adjustedLines, difficulty);
     setLesson(newLesson);
-    setStats((prev) => ({
-      ...prev,
+    // A fresh exercise (new song, new difficulty, re-sync) resets ALL progress:
+    // answers, XP and hints from the previous run must not carry over.
+    setStats({
+      ...EMPTY_STATS,
       totalBlanks: newLesson.totalBlanks,
-      answeredCount: 0,
-      correctCount: 0,
-      incorrectCount: 0,
       accuracy: 100,
-    }));
+    });
+    setIsCompleteModalOpen(false);
     if (adjustedLines.length > 0 && playerRef.current) {
       // Start at 0 when the song opens with a long instrumental intro so the
       // note row is visible; otherwise cue just before the first line.
@@ -345,6 +345,23 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
       onLineChangedRef.current?.(activeLineIndex);
     }
   }, [activeLineIndex]);
+
+  /**
+   * The line "Replay" should restart from. Prefer the line that still has an
+   * unanswered blank (the one the player is working on); otherwise fall back to
+   * the currently highlighted line. Computed from the lesson directly so it is
+   * stable even during an instrumental gap (when no line is highlighted).
+   */
+  const replayTargetMs = React.useMemo(() => {
+    const ls = lesson?.lines;
+    if (!ls || ls.length === 0) return null;
+    const pendingLine = ls.find((l) =>
+      l.words.some((w) => w.isBlank && w.isCorrect === undefined && !w.skipped)
+    );
+    if (pendingLine) return pendingLine.startTimeMs;
+    if (activeLineIndex >= 0) return ls[activeLineIndex].startTimeMs;
+    return ls[ls.length - 1].startTimeMs;
+  }, [lesson, activeLineIndex]);
 
   // Auto-pause calculation
   const autoPauseLineEndMs = React.useMemo(() => {
@@ -543,8 +560,13 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
   }, []);
 
   const replayLine = useCallback(() => {
-    playerRef.current?.replayCurrentLine();
-  }, []);
+    // Explicit, reliable restart: seek to the active line and play. We don't
+    // rely on the player's own "currentLineStartMs" (which can lag a render
+    // behind and made Replay feel stuck / sometimes a no-op).
+    if (replayTargetMs === null) return;
+    playerRef.current?.seekTo(Math.max(0, replayTargetMs / 1000 - 0.2));
+    playerRef.current?.play();
+  }, [replayTargetMs]);
 
   const resumePlay = useCallback(() => {
     // Classic gate: never resume past a line that still has an unanswered blank.
@@ -645,7 +667,9 @@ export function usePracticeEngine(options: PracticeEngineOptions = {}): Practice
     setCurrentSong(null);
     setLesson(null);
     setBaseLines([]);
+    setStats(EMPTY_STATS);
     setIsCompleteModalOpen(false);
+    playerRef.current?.pause();
   }, []);
 
   return {

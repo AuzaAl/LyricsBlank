@@ -10,7 +10,6 @@ interface CinematicVideoPlayerProps {
   onPlayerReady?: () => void;
   autoPauseLineEndMs?: number | null;
   onAutoPaused?: () => void;
-  currentLineStartMs?: number;
   ambientColor?: string;
   songTitle?: string;
   artist?: string;
@@ -21,7 +20,6 @@ export interface VideoPlayerRef {
   play: () => void;
   pause: () => void;
   togglePlay: () => void;
-  replayCurrentLine: () => void;
   setPlaybackRate: (rate: number) => void;
   getCurrentTimeMs: () => number;
 }
@@ -74,7 +72,6 @@ export const CinematicVideoPlayer = React.forwardRef<VideoPlayerRef, CinematicVi
       onPlayerReady,
       autoPauseLineEndMs,
       onAutoPaused,
-      currentLineStartMs,
       ambientColor = 'rgba(226, 183, 20, 0.3)',
       songTitle,
       artist,
@@ -292,6 +289,10 @@ export const CinematicVideoPlayer = React.forwardRef<VideoPlayerRef, CinematicVi
     // 4. Stable Control Methods (Defensive & Queued)
     const seekTo = useCallback((seconds: number) => {
       setCurrentTimeMs(seconds * 1000);
+      // Re-arm the auto-pause latch: after a manual seek (Replay / click-line)
+      // we must be allowed to pause at the target line again. Without this the
+      // previous latch value suppressed the auto-pause and playback ran past.
+      hasAutoPausedForLineRef.current = null;
       if (isReadyRef.current && ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
         try {
           ytPlayerRef.current.seekTo(seconds, true);
@@ -334,13 +335,6 @@ export const CinematicVideoPlayer = React.forwardRef<VideoPlayerRef, CinematicVi
       }
     }, [isPlaying, pause, play]);
 
-    const replayCurrentLine = useCallback(() => {
-      if (currentLineStartMs !== undefined) {
-        seekTo(Math.max(0, currentLineStartMs / 1000 - 0.2));
-        play();
-      }
-    }, [currentLineStartMs, seekTo, play]);
-
     const setPlaybackRate = useCallback((rate: number) => {
       if (isReadyRef.current && ytPlayerRef.current && typeof ytPlayerRef.current.setPlaybackRate === 'function') {
         try {
@@ -358,7 +352,6 @@ export const CinematicVideoPlayer = React.forwardRef<VideoPlayerRef, CinematicVi
       play,
       pause,
       togglePlay,
-      replayCurrentLine,
       setPlaybackRate,
       getCurrentTimeMs,
     }));

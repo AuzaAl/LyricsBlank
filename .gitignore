@@ -9,6 +9,7 @@
 /.tmp-scoring/
 /.tmp-instrumental/
 /.tmp-verify/
+/.tmp-text/
 *.tsbuildinfo
 
 # env

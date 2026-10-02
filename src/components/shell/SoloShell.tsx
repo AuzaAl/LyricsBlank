@@ -27,6 +27,13 @@ export const SoloShell: React.FC<SoloShellProps> = ({
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const engine = usePracticeEngine({ mode });
 
+  // Leaving the session (or picking a new song) resets the run's progress:
+  // we drop the song/lesson so the player returns to the landing card.
+  const handleExit = React.useCallback(() => {
+    engine.resetSession();
+    onExitToLanding?.();
+  }, [engine, onExitToLanding]);
+
   const {
     currentSong,
     difficulty,
@@ -70,7 +77,11 @@ export const SoloShell: React.FC<SoloShellProps> = ({
           onOpenMultiplayer={onOpenMultiplayer}
         />
       ) : (
-        <PracticeView engine={engine} />
+        <PracticeView
+          engine={engine}
+          onExit={handleExit}
+          exitLabel="Exit Session"
+        />
       )}
     </AppChrome>
   );
