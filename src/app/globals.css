@@ -1,0 +1,195 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * YouTube Music design system (see design.md)
+ * - Base: #030303, hierarchy via white alpha scale
+ * - Single dynamic accent: the ambient art wash; brand red reserved for progress
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --ytm-base: #030303;
+  --ytm-surface-1: #181818;
+  --ytm-surface-2: #212121;
+
+  /* White alpha hierarchy */
+  --ytm-text-1: rgba(255, 255, 255, 1);
+  --ytm-ink: rgba(255, 255, 255, 0.7);
+  --ytm-text-3: rgba(255, 255, 255, 0.5);
+  --ytm-text-4: rgba(255, 255, 255, 0.3);
+
+  /* Accents */
+  --ytm-brand: #f03;
+  --ytm-link: #3ea6ff;
+
+  /* Washes */
+  --ytm-tonal-wash: rgba(255, 255, 255, 0.05);
+  --ytm-tonal-hover: rgba(255, 255, 255, 0.1);
+  --ytm-solid-rim: rgba(255, 255, 255, 0.2);
+  --ytm-frosted: rgba(15, 15, 15, 0.8);
+}
+
+html,
+body {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  background-color: var(--ytm-base);
+  color: var(--ytm-text-1);
+  font-family: 'Roboto', 'SF Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+/* Custom Selection */
+::selection {
+  background: rgba(255, 0, 51, 0.35);
+  color: #ffffff;
+}
+
+/* Hide scrollbars */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/*
+ * Ambient art wash — the signature YT Music background (design.md §2).
+ * Thumbnail -> cover -> blur(100px) saturate(2) -> 50% over #030303,
+ * with a vignette scrim dissolving the edges to black.
+ * Lives inside <main> as an absolute z-0 layer: body backgrounds paint
+ * over root-level negative-z layers, so negative z-index is unreliable.
+ */
+.ambient-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--ytm-base);
+}
+
+/*
+ * The art layer is a 150vmax square centered in the stage: big enough
+ * that it still covers the whole viewport at any rotation angle
+ * (a square of side >= sqrt(W^2 + H^2) always covers), so the clockwise
+ * spin never exposes an edge.
+ */
+.ambient-stage__art {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150vmax;
+  height: 150vmax;
+  margin: -75vmax 0 0 -75vmax;
+  background-size: cover;
+  background-position: center;
+  filter: blur(100px) saturate(2);
+  opacity: 0.5;
+  transform-origin: center;
+  animation: ambientSpin 90s linear infinite;
+  transition: opacity 1.2s ease;
+  will-change: transform;
+}
+
+/* Slow clockwise rotation, seamlessly looping */
+@keyframes ambientSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Respect reduced-motion: keep the wash but freeze the spin */
+@media (prefers-reduced-motion: reduce) {
+  .ambient-stage__art {
+    animation: none;
+  }
+}
+.ambient-stage__vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 120% at 50% 45%,
+    transparent 0%,
+    rgba(0, 0, 0, 0.25) 40%,
+    rgba(0, 0, 0, 0.6) 68%,
+    rgba(0, 0, 0, 0.9) 88%,
+    #000 100%
+  );
+}
+
+/* Frosted bar treatment (player bar / overlays) */
+.ytm-frosted {
+  background: rgba(15, 15, 15, 0.35);
+  backdrop-filter: blur(25px) saturate(160%);
+  -webkit-backdrop-filter: blur(25px) saturate(160%);
+}
+
+/* Legacy glass panel, retuned to YTM frosted glass */
+.glass-panel {
+  background: rgba(15, 15, 15, 0.55);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45),
+              inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Lyrics depth cascade (design.md §5) — blur + opacity per distance */
+.lyric-line {
+  font-weight: 600;
+  color: var(--ytm-text-4);
+  transition:
+    filter 0.4s ease-out,
+    opacity 0.4s ease-out,
+    transform 0.166s ease-out,
+    color 0.3s ease;
+  transform: scale(0.98);
+  transform-origin: left center;
+}
+
+.lyric-line[data-depth='0'] {
+  color: var(--ytm-text-1);
+  filter: blur(0);
+  opacity: 1;
+  transform: scale(1);
+}
+
+.lyric-line[data-depth='1'] {
+  filter: blur(1.125px);
+  opacity: 0.88;
+}
+
+.lyric-line[data-depth='2'] {
+  filter: blur(2.5px);
+  opacity: 0.72;
+}
+
+.lyric-line[data-depth='3'] {
+  filter: blur(4.125px);
+  opacity: 0.52;
+}
+
+.lyric-line[data-depth='4'] {
+  filter: blur(6px);
+  opacity: 0.28;
+}
+
+/* Hover lift for inactive lines (declared last so it wins) */
+.lyric-line:hover {
+  opacity: 0.5;
+}
