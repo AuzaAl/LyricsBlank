@@ -10,6 +10,8 @@ interface CinematicVideoPlayerProps {
   onPlayerReady?: () => void;
   autoPauseLineEndMs?: number | null;
   onAutoPaused?: () => void;
+  /** Native width/height of the video (defaults to 16:9). */
+  aspectRatio?: number;
   ambientColor?: string;
   songTitle?: string;
   artist?: string;
@@ -72,6 +74,7 @@ export const CinematicVideoPlayer = React.forwardRef<VideoPlayerRef, CinematicVi
       onPlayerReady,
       autoPauseLineEndMs,
       onAutoPaused,
+      aspectRatio,
       ambientColor = 'rgba(226, 183, 20, 0.3)',
       songTitle,
       artist,
@@ -356,6 +359,15 @@ export const CinematicVideoPlayer = React.forwardRef<VideoPlayerRef, CinematicVi
       getCurrentTimeMs,
     }));
 
+    // Follow the video's real aspect ratio (portrait stays portrait). Width is
+    // the largest that fits both the column AND the height cap, so the derived
+    // height (width / ratio) can never exceed --video-max-h.
+    const ratio = aspectRatio && aspectRatio > 0 ? aspectRatio : 16 / 9;
+    const frameStyle: React.CSSProperties = {
+      aspectRatio: String(ratio),
+      width: `min(100%, calc(var(--video-max-h) * ${ratio}))`,
+    };
+
     return (
       <div className="relative w-full flex flex-col items-center justify-center">
         {/* Soft Ambient Backlight Glow matching video palette */}
@@ -366,10 +378,13 @@ export const CinematicVideoPlayer = React.forwardRef<VideoPlayerRef, CinematicVi
           }}
         />
 
-        {/* Cinematic Video Artwork Frame — 20px radius per design.md §6 */}
+        {/* Cinematic Video Artwork Frame — 20px radius per design.md §6.
+            The frame follows the video's REAL aspect ratio (portrait stays
+            portrait, 4:3 stays 4:3); only a max width/height is enforced. */}
         <div
           ref={playerContainerRef}
-          className="relative w-full aspect-video overflow-hidden rounded-[20px] border border-white/10 bg-black/95 shadow-2xl flex items-center justify-center cursor-pointer group"
+          className="video-frame relative overflow-hidden rounded-[20px] border border-white/10 bg-black/95 shadow-2xl flex items-center justify-center cursor-pointer group mx-auto"
+          style={frameStyle}
           onClick={togglePlay}
         >
           {/* Fallback placeholder while iframe mounts */}

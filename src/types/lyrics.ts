@@ -35,6 +35,9 @@ export interface SongMetadata {
   artist: string;
   thumbnailUrl: string;
   durationMs?: number;
+  /** Native video dimensions (from oEmbed) — used to size the player frame. */
+  width?: number;
+  height?: number;
 }
 
 export interface SongLesson {

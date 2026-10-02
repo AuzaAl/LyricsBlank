@@ -71,6 +71,11 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
           <CinematicVideoPlayer
             ref={playerRef}
             videoId={currentSong.videoId}
+            aspectRatio={
+              currentSong.width && currentSong.height
+                ? currentSong.width / currentSong.height
+                : undefined
+            }
             onTimeUpdate={engine.setCurrentTimeMs}
             onDurationChange={engine.setDurationMs}
             onIsPlayingChange={engine.setPlaying}

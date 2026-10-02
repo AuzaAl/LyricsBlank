@@ -31,6 +31,207 @@ interface MonkeyLyricsCanvasProps {
   onTogglePlay?: () => void;
 }
 
+/* ---------------------------------------------------------------------------
+ * Memoized row primitives.
+ *
+ * The player ticks `currentTimeMs` ~20x/s. Without memoization every tick
+ * re-rendered the entire lyric list — brutal on low-end devices. Only the
+ * active row depends on the clock / typed input, so inactive rows bail out of
+ * re-rendering entirely (React.memo + a comparator that ignores the clock for
+ * inactive rows). Visual output is identical.
+ * ------------------------------------------------------------------------- */
+
+interface WordViewProps {
+  w: LyricWord;
+  isCurrentLine: boolean;
+  isActiveTarget: boolean;
+  typedInput: string;
+  shakeError: boolean;
+  currentTimeMs: number;
+}
+
+const WordView = React.memo<WordViewProps>(function WordView({
+  w,
+  isCurrentLine,
+  isActiveTarget,
+  typedInput,
+  shakeError,
+  currentTimeMs,
+}) {
+  // Normal non-blank word
+  if (!w.isBlank) {
+    if (!isCurrentLine) {
+      return (
+        <span className="inline-block mr-2.5 sm:mr-3 transition-colors duration-300">
+          {w.text}
+        </span>
+      );
+    }
+
+    const isWordActive = currentTimeMs >= w.startTimeMs && currentTimeMs <= w.endTimeMs;
+    const isWordPast = currentTimeMs > w.endTimeMs;
+
+    let wordClass = 'text-white/40 transition-colors duration-200';
+    if (isWordActive) {
+      wordClass =
+        'text-white -translate-y-0.5 drop-shadow-[0_0_12px_rgba(255,255,255,0.7)] transition-all duration-150';
+    } else if (isWordPast) {
+      wordClass = 'text-white transition-colors duration-200';
+    }
+
+    return (
+      <span className={`inline-block mr-2.5 sm:mr-3 ${wordClass}`}>{w.text}</span>
+    );
+  }
+
+  // Word IS a Blank:
+  // Case A: Correctly answered (Clean minimal checkmark)
+  if (w.isCorrect === true) {
+    return (
+      <span className="inline-flex items-center gap-1 mr-2.5 sm:mr-3 text-emerald-400 font-semibold transition-all">
+        <span>{w.text}</span>
+        <CircleCheckIcon size={16} className="text-emerald-400 shrink-0 inline" />
+      </span>
+    );
+  }
+
+  // Case B: Skipped / Missed
+  if (w.isCorrect === false) {
+    return (
+      <span
+        className="inline-block mr-2.5 sm:mr-3 text-red-400/80 line-through font-semibold"
+        title={`Answer: ${w.text}`}
+      >
+        {w.text}
+      </span>
+    );
+  }
+
+  // Case C: Currently active blank being typed
+  if (isActiveTarget) {
+    const remainder = maskRemainder(w.cleanText, letterCount(typedInput));
+    return (
+      <span
+        className={`relative inline-flex items-baseline mr-2.5 sm:mr-3 px-2 py-0.5 rounded-md bg-white/[0.08] border-b-2 transition-all ${
+          shakeError ? 'border-red-500 animate-subtle-shake' : 'border-white text-white'
+        }`}
+      >
+        <span className="font-semibold text-white tracking-wide">{typedInput}</span>
+        {/* Subtle blinking cursor */}
+        <span className="inline-block w-[2px] h-[1em] bg-white animate-pulse ml-0.5 align-middle" />
+        {/* Placeholder for remaining letters — apostrophes stay visible */}
+        {remainder && (
+          <span className="text-white/20 font-normal tracking-widest ml-1 select-none">
+            {remainder}
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  // Case D: Pending blank in another line — apostrophes stay visible
+  return (
+    <span className="inline-block mr-2.5 sm:mr-3 px-1 border-b border-white/20 text-white/30 font-normal tracking-wider">
+      {maskWord(w.cleanText)}
+    </span>
+  );
+});
+
+interface LyricRowViewProps {
+  line: LyricLine;
+  rowKey: string;
+  depth: number;
+  isActive: boolean;
+  currentTimeMs: number;
+  activeBlankWordId: string | null;
+  typedInput: string;
+  shakeError: boolean;
+  onSeekLine?: (timeMs: number) => void;
+}
+
+const LyricRowView = React.memo<LyricRowViewProps>(function LyricRowView({
+  line,
+  rowKey,
+  depth,
+  isActive,
+  currentTimeMs,
+  activeBlankWordId,
+  typedInput,
+  shakeError,
+  onSeekLine,
+}) {
+  return (
+    <div
+      id={`lyric-row-${rowKey}`}
+      data-depth={depth}
+      onClick={() => onSeekLine?.(line.startTimeMs)}
+      className={`lyric-line flex flex-wrap items-baseline cursor-pointer select-none text-2xl sm:text-3xl ${
+        isActive ? 'lg:text-[44px] sm:text-4xl animate-line-enter' : 'lg:text-[34px]'
+      }`}
+      title="Click line to jump here"
+    >
+      {line.words.map((w) => (
+        <WordView
+          key={w.id}
+          w={w}
+          isCurrentLine={isActive}
+          isActiveTarget={isActive && activeBlankWordId === w.id}
+          typedInput={typedInput}
+          shakeError={shakeError}
+          currentTimeMs={currentTimeMs}
+        />
+      ))}
+    </div>
+  );
+});
+
+/**
+ * Skip re-render when the row is inactive and nothing about it changed.
+ * Active rows compare the clock/typing state; inactive rows ignore them.
+ */
+function lyricRowEqual(a: LyricRowViewProps, b: LyricRowViewProps): boolean {
+  if (a.line !== b.line) return false;
+  if (a.depth !== b.depth) return false;
+  if (a.isActive !== b.isActive) return false;
+  if (a.activeBlankWordId !== b.activeBlankWordId) return false;
+  if (!a.isActive) return true; // inactive: clock/typing are irrelevant
+  return (
+    a.currentTimeMs === b.currentTimeMs &&
+    a.typedInput === b.typedInput &&
+    a.shakeError === b.shakeError
+  );
+}
+const LyricRow = React.memo(LyricRowView, lyricRowEqual);
+
+interface GapRowViewProps {
+  rowKey: string;
+  depth: number;
+  isActive: boolean;
+}
+
+const GapRow = React.memo<GapRowViewProps>(function GapRow({ rowKey, depth, isActive }) {
+  return (
+    <div
+      id={`lyric-row-${rowKey}`}
+      data-depth={depth}
+      className={`lyric-line flex items-center gap-2.5 select-none text-2xl sm:text-3xl ${
+        isActive ? 'lg:text-[44px] sm:text-4xl animate-line-enter' : 'lg:text-[34px]'
+      }`}
+      title="Instrumental break"
+      aria-label="Instrumental break"
+    >
+      {[0, 1, 2].map((n) => (
+        <MusicNoteIcon
+          key={n}
+          size={isActive ? 30 : 24}
+          className={isActive ? 'instrumental-note text-white' : 'text-white/50'}
+          style={{ animationDelay: `${n * 0.22}s` }}
+        />
+      ))}
+    </div>
+  );
+});
+
 export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
   lines,
   currentTimeMs,
@@ -116,18 +317,55 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
     }
   }, [activeBlankWord]);
 
-  // Center the active row (lyric line OR instrumental note) with am-lyrics style transition
+  // Center the active row (lyric line OR instrumental note) with a controlled,
+  // rAF-eased scroll. `scrollIntoView({behavior:'smooth'})` re-triggers browser
+  // heuristics and felt stiff/jerky; this keeps motion consistent and is
+  // cancellable (and instant under prefers-reduced-motion).
+  const scrollRafRef = useRef<number | null>(null);
   useEffect(() => {
     if (activeRowIndex < 0) return;
     const row = rows[activeRowIndex];
-    if (!row) return;
+    const container = containerRef.current;
+    if (!row || !container) return;
     const activeEl = document.getElementById(`lyric-row-${row.key}`);
-    if (activeEl && containerRef.current) {
-      activeEl.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-      });
+    if (!activeEl) return;
+
+    const target =
+      activeEl.offsetTop - container.clientHeight / 2 + activeEl.clientHeight / 2;
+    const start = container.scrollTop;
+    const delta = target - start;
+
+    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
+
+    const reduce =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || Math.abs(delta) < 1) {
+      container.scrollTop = target;
+      return;
     }
+
+    const duration = Math.min(650, 220 + Math.abs(delta) * 0.5);
+    const t0 = performance.now();
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / duration);
+      container.scrollTop = start + delta * easeOutCubic(p);
+      if (p < 1) {
+        scrollRafRef.current = requestAnimationFrame(step);
+      } else {
+        scrollRafRef.current = null;
+      }
+    };
+    scrollRafRef.current = requestAnimationFrame(step);
+
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
   }, [activeRowIndex, rows]);
 
   // Handle typing input
@@ -217,109 +455,6 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
     }
   };
 
-  // Render individual word with default am-lyrics animation style
-  const renderWord = (w: LyricWord, isCurrentLine: boolean) => {
-    // Normal non-blank word
-    if (!w.isBlank) {
-      if (!isCurrentLine) {
-        return (
-          <span
-            key={w.id}
-            className="inline-block mr-2.5 sm:mr-3 transition-colors duration-300"
-          >
-            {w.text}
-          </span>
-        );
-      }
-
-      // Inside Active Line: default BiniLyrics / am-lyrics animation
-      const isWordActive =
-        currentTimeMs >= w.startTimeMs && currentTimeMs <= w.endTimeMs;
-      const isWordPast = currentTimeMs > w.endTimeMs;
-
-      let wordClass = 'text-white/40 transition-colors duration-200';
-      if (isWordActive) {
-        wordClass =
-          'text-white -translate-y-0.5 drop-shadow-[0_0_12px_rgba(255,255,255,0.7)] transition-all duration-150';
-      } else if (isWordPast) {
-        wordClass = 'text-white transition-colors duration-200';
-      }
-
-      return (
-        <span
-          key={w.id}
-          className={`inline-block mr-2.5 sm:mr-3 ${wordClass}`}
-        >
-          {w.text}
-        </span>
-      );
-    }
-
-    // Word IS a Blank:
-    // Case A: Correctly answered (Clean minimal checkmark)
-    if (w.isCorrect === true) {
-      return (
-        <span
-          key={w.id}
-          className="inline-flex items-center gap-1 mr-2.5 sm:mr-3 text-emerald-400 font-semibold transition-all"
-        >
-          <span>{w.text}</span>
-          <CircleCheckIcon size={16} className="text-emerald-400 shrink-0 inline" />
-        </span>
-      );
-    }
-
-    // Case B: Skipped / Missed
-    if (w.isCorrect === false) {
-      return (
-        <span
-          key={w.id}
-          className="inline-block mr-2.5 sm:mr-3 text-red-400/80 line-through font-semibold"
-          title={`Answer: ${w.text}`}
-        >
-          {w.text}
-        </span>
-      );
-    }
-
-    // Case C: Currently active blank being typed (WAY MORE SIMPLE inline input)
-    const isActiveTarget = activeBlankWord?.id === w.id;
-    if (isActiveTarget) {
-      return (
-        <span
-          key={w.id}
-          className={`relative inline-flex items-baseline mr-2.5 sm:mr-3 px-2 py-0.5 rounded-md bg-white/[0.08] border-b-2 transition-all ${
-            shakeError
-              ? 'border-red-500 animate-subtle-shake'
-              : 'border-white text-white'
-          }`}
-        >
-          <span className="font-semibold text-white tracking-wide">
-            {typedInput}
-          </span>
-          {/* Subtle blinking cursor */}
-          <span className="inline-block w-[2px] h-[1em] bg-white animate-pulse ml-0.5 align-middle" />
-          {/* Placeholder for remaining letters — apostrophes stay visible */}
-          {maskRemainder(w.cleanText, letterCount(typedInput)) && (
-            <span className="text-white/20 font-normal tracking-widest ml-1 select-none">
-              {maskRemainder(w.cleanText, letterCount(typedInput))}
-            </span>
-          )}
-        </span>
-      );
-    }
-
-    // Case D: Pending blank in another line — apostrophes stay visible
-    return (
-      <span
-        key={w.id}
-        className="inline-block mr-2.5 sm:mr-3 px-1 border-b border-white/20 text-white/30 font-normal tracking-wider"
-      >
-        {maskWord(w.cleanText)}
-      </span>
-    );
-  };
-
   return (
     <div
       className="relative flex-1 min-h-0 w-full h-full flex flex-col justify-between py-4 px-2 sm:px-4 select-none"
@@ -351,49 +486,23 @@ export const MonkeyLyricsCanvas: React.FC<MonkeyLyricsCanvasProps> = ({
 
           // ---- Instrumental note row (intro / interlude / outro) ----
           if (row.kind === 'gap') {
-            const isGapActive = isActive;
-            return (
-              <div
-                id={`lyric-row-${row.key}`}
-                key={row.key}
-                data-depth={depth}
-                className={`lyric-line flex items-center gap-2.5 select-none text-2xl sm:text-3xl ${
-                  isGapActive ? 'lg:text-[44px] sm:text-4xl animate-line-enter' : 'lg:text-[34px]'
-                }`}
-                title="Instrumental break"
-                aria-label="Instrumental break"
-              >
-                {[0, 1, 2].map((n) => (
-                  <MusicNoteIcon
-                    key={n}
-                    size={isGapActive ? 30 : 24}
-                    className={
-                      isGapActive
-                        ? 'instrumental-note text-white'
-                        : 'text-white/50'
-                    }
-                    style={{ animationDelay: `${n * 0.22}s` }}
-                  />
-                ))}
-              </div>
-            );
+            return <GapRow key={row.key} rowKey={row.key} depth={depth} isActive={isActive} />;
           }
 
           // ---- Regular lyric line ----
-          const line = lines[row.lineIndex];
           return (
-            <div
-              id={`lyric-row-${row.key}`}
+            <LyricRow
               key={row.key}
-              data-depth={depth}
-              onClick={() => onSeekLine?.(line.startTimeMs)}
-              className={`lyric-line flex flex-wrap items-baseline cursor-pointer select-none text-2xl sm:text-3xl ${
-                isActive ? 'lg:text-[44px] sm:text-4xl animate-line-enter' : 'lg:text-[34px]'
-              }`}
-              title="Click line to jump here"
-            >
-              {line.words.map((w) => renderWord(w, isActive))}
-            </div>
+              rowKey={row.key}
+              line={lines[row.lineIndex]}
+              depth={depth}
+              isActive={isActive}
+              currentTimeMs={currentTimeMs}
+              activeBlankWordId={activeBlankWord?.id ?? null}
+              typedInput={typedInput}
+              shakeError={shakeError}
+              onSeekLine={onSeekLine}
+            />
           );
         })}
       </div>

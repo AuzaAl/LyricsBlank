@@ -68,11 +68,19 @@ export async function fetchYouTubeMetadata(videoId: string): Promise<SongMetadat
 
     const { title, artist } = cleanSongTitleAndArtist(data.title, data.author_name || 'Unknown');
 
+    // noembed reports the real player dimensions (e.g. 200x113 for 16:9, 200x150
+    // for 4:3, 200x356 for vertical). Keep the ratio so the frame matches the
+    // actual content instead of being force-locked to 16:9.
+    const width = typeof data.width === 'number' && data.width > 0 ? data.width : undefined;
+    const height = typeof data.height === 'number' && data.height > 0 ? data.height : undefined;
+
     return {
       videoId,
       title: title || data.title,
       artist: artist || data.author_name || 'Unknown Artist',
       thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      width,
+      height,
     };
   } catch (err) {
     // Fallback if oEmbed fails
